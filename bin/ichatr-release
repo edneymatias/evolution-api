@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+
+abort() {
+  echo -e "\033[31mError: $1\033[0m" >&2
+  exit 1
+}
+
+# Dirty tree check
+if [[ -n "$(git -C "$repo_root" status --porcelain)" ]]; then
+  abort "Working tree is dirty. Please commit or stash your changes before releasing."
+fi
+
+# Base version parsing
+package_json="$repo_root/package.json"
+[[ -f "$package_json" ]] || abort "package.json not found"
+
+base_version="$(python3 -c "import json; print(json.load(open('$package_json'))['version'])")"
+[[ -n "$base_version" ]] || abort "Could not determine base version from package.json"
+
+# Fetch existing tags and compute the next tag
+tag_prefix="${base_version}-ichatr."
+mapfile -t existing_tags < <(git -C "$repo_root" tag -l "${tag_prefix}*")
+
+next_tag_number=1
+highest_tag=""
+
+if [[ ${#existing_tags[@]} -gt 0 ]]; then
+  max_number=0
+  for tag in "${existing_tags[@]}"; do
+    if [[ "$tag" =~ ^${tag_prefix//./\\.}([0-9]+)$ ]]; then
+      n="${BASH_REMATCH[1]}"
+      (( n > max_number )) && max_number=$n
+    else
+      abort "Malformed tag found: $tag. Please fix manually."
+    fi
+  done
+  highest_tag="${tag_prefix}${max_number}"
+  next_tag_number=$(( max_number + 1 ))
+fi
+
+next_tag="${tag_prefix}${next_tag_number}"
+
+# Interactive confirmation prompt
+echo "Current base version: $base_version"
+echo "Highest existing tag: ${highest_tag:-None}"
+echo
+echo -e "Next tag: \033[32m$next_tag\033[0m"
+echo
+read -r -p "Are you sure you want to cut this release? This will push the tag to origin immediately. [y/N]: " confirm
+confirm="$(echo "$confirm" | tr '[:upper:]' '[:lower:]')"
+
+if [[ "$confirm" != "y" && "$confirm" != "yes" ]]; then
+  abort "Release aborted by user."
+fi
+
+# Execute git tag and push
+echo "Creating annotated tag $next_tag..."
+git -C "$repo_root" tag -a "$next_tag" -m "Release $next_tag"
+
+echo "Pushing tag to origin..."
+git -C "$repo_root" push origin "$next_tag"
+
+echo -e "\033[32mTag $next_tag created and pushed. CI pipeline will now build and publish the image.\033[0m"
