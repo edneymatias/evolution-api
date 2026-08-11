@@ -1336,7 +1336,7 @@ export class BaileysStartupService extends ChannelStartupService {
           }
 
           this.logger.warn(
-            `[ADS-DEBUG] gate-check keyId=${received.key.id} CHATWOOT.ENABLED=${this.configService.get<Chatwoot>('CHATWOOT').ENABLED} ` +
+            `[ADS-DEBUG] gate-check v2 keyId=${received.key.id} CHATWOOT.ENABLED=${this.configService.get<Chatwoot>('CHATWOOT').ENABLED} ` +
               `localChatwoot.enabled=${this.localChatwoot?.enabled} instanceId=${this.instanceId} instanceName=${this.instance.name} ` +
               `isBroadcast=${received.key.id.includes('@broadcast')}`,
           );
