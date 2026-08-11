@@ -1335,6 +1335,12 @@ export class BaileysStartupService extends ChannelStartupService {
             await this.client.readMessages([received.key]);
           }
 
+          this.logger.warn(
+            `[ADS-DEBUG] gate-check keyId=${received.key.id} CHATWOOT.ENABLED=${this.configService.get<Chatwoot>('CHATWOOT').ENABLED} ` +
+              `localChatwoot.enabled=${this.localChatwoot?.enabled} instanceId=${this.instanceId} instanceName=${this.instance.name} ` +
+              `isBroadcast=${received.key.id.includes('@broadcast')}`,
+          );
+
           if (
             this.configService.get<Chatwoot>('CHATWOOT').ENABLED &&
             this.localChatwoot?.enabled &&
