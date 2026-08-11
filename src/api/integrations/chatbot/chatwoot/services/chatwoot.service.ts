@@ -1741,7 +1741,29 @@ export class ChatwootService {
       mediaUrl?: string;
     }
 
-    const externalAdReply = msg.extendedTextMessage?.contextInfo?.externalAdReply || msg.contextInfo?.externalAdReply;
+    const externalAdReply =
+      msg.extendedTextMessage?.contextInfo?.externalAdReply ||
+      msg.contextInfo?.externalAdReply ||
+      msg.message?.extendedTextMessage?.contextInfo?.externalAdReply ||
+      msg.message?.contextInfo?.externalAdReply;
+
+    if (!externalAdReply) {
+      let rawDump = '';
+      try {
+        rawDump = JSON.stringify(msg);
+      } catch {
+        rawDump = '';
+      }
+      if (rawDump.includes('externalAdReply')) {
+        this.logger.warn(
+          `[ADS-DEBUG] externalAdReply found in raw payload but not extracted. ` +
+            `topKeys=${Object.keys(msg || {}).join(',')} ` +
+            `messageKeys=${msg?.message ? Object.keys(msg.message).join(',') : 'n/a'} ` +
+            `contextInfoKeys=${msg?.contextInfo ? Object.keys(msg.contextInfo).join(',') : 'n/a'} ` +
+            `messageType=${msg?.messageType}`,
+        );
+      }
+    }
 
     const adsMessage: AdsMessage | undefined = {
       title: externalAdReply?.title,
@@ -2250,7 +2272,18 @@ export class ChatwootService {
 
         const isAdsMessage = (adsMessage && adsMessage.title) || adsMessage.body || adsMessage.thumbnailUrl;
         if (isAdsMessage) {
-          const imgBuffer = await axios.get(adsMessage.thumbnailUrl, { responseType: 'arraybuffer' });
+          this.logger.warn(
+            `[ADS-DEBUG] isAdsMessage branch entered. sourceId=${adsMessage.sourceId} sourceType=${adsMessage.sourceType} ` +
+              `thumbnailUrl=${adsMessage.thumbnailUrl}`,
+          );
+
+          let imgBuffer;
+          try {
+            imgBuffer = await axios.get(adsMessage.thumbnailUrl, { responseType: 'arraybuffer' });
+          } catch (error) {
+            this.logger.warn(`[ADS-DEBUG] Failed to download ads thumbnail: ${error?.message || error}`);
+            return;
+          }
 
           const extension = mimeTypes.extension(imgBuffer.headers['content-type']);
           const mimeType = extension && mimeTypes.lookup(extension);

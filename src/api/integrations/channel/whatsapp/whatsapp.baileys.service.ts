@@ -1164,6 +1164,18 @@ export class BaileysStartupService extends ChannelStartupService {
           }
 
           if ((type !== 'notify' && type !== 'append') || editedMessage || !received?.message) {
+            let hasAdReply = false;
+            try {
+              hasAdReply = JSON.stringify(received?.message || {}).includes('externalAdReply');
+            } catch {
+              hasAdReply = false;
+            }
+            if (hasAdReply) {
+              this.logger.warn(
+                `[ADS-DEBUG] Message with externalAdReply DISCARDED by upsert type filter. ` +
+                  `type=${type} editedMessage=${!!editedMessage} hasMessage=${!!received?.message} keyId=${received?.key?.id}`,
+              );
+            }
             continue;
           }
 
