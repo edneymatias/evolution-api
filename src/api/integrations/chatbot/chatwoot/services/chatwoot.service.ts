@@ -931,6 +931,7 @@ export class ChatwootService {
     messageBody?: any,
     sourceId?: string,
     quotedMsg?: MessageModel,
+    referral?: Record<string, string>,
   ) {
     const client = await this.clientCw(instance);
 
@@ -943,6 +944,12 @@ export class ChatwootService {
 
     const sourceReplyId = quotedMsg?.chatwootMessageId || null;
 
+    let contentAttributes: Record<string, unknown> = { ...replyToIds };
+
+    if (referral) {
+      contentAttributes = { ...contentAttributes, referral };
+    }
+
     const message = await client.messages.create({
       accountId: this.provider.accountId,
       conversationId: conversationId,
@@ -952,9 +959,7 @@ export class ChatwootService {
         attachments: attachments,
         private: privateMessage || false,
         source_id: sourceId,
-        content_attributes: {
-          ...replyToIds,
-        },
+        content_attributes: contentAttributes,
         source_reply_id: sourceReplyId ? sourceReplyId.toString() : null,
       },
     });
@@ -1741,7 +1746,11 @@ export class ChatwootService {
       mediaUrl?: string;
     }
 
-    const externalAdReply = msg.extendedTextMessage?.contextInfo?.externalAdReply || msg.contextInfo?.externalAdReply;
+    const externalAdReply =
+      msg.extendedTextMessage?.contextInfo?.externalAdReply ||
+      msg.contextInfo?.externalAdReply ||
+      msg.message?.extendedTextMessage?.contextInfo?.externalAdReply ||
+      msg.message?.contextInfo?.externalAdReply;
 
     const adsMessage: AdsMessage | undefined = {
       title: externalAdReply?.title,
@@ -2250,32 +2259,6 @@ export class ChatwootService {
 
         const isAdsMessage = (adsMessage && adsMessage.title) || adsMessage.body || adsMessage.thumbnailUrl;
         if (isAdsMessage) {
-          const imgBuffer = await axios.get(adsMessage.thumbnailUrl, { responseType: 'arraybuffer' });
-
-          const extension = mimeTypes.extension(imgBuffer.headers['content-type']);
-          const mimeType = extension && mimeTypes.lookup(extension);
-
-          if (!mimeType) {
-            this.logger.warn('mimetype of Ads message not found');
-            return;
-          }
-
-          const random = Math.random().toString(36).substring(7);
-          const nameFile = `${random}.${mimeTypes.extension(mimeType)}`;
-          const fileData = Buffer.from(imgBuffer.data, 'binary');
-
-          const img = await Jimp.read(fileData);
-          await img.cover({
-            w: 320,
-            h: 180,
-          });
-          const processedBuffer = await img.getBuffer(JimpMime.png);
-
-          const fileStream = new Readable();
-          fileStream._read = () => {}; // _read is required but you can noop it
-          fileStream.push(processedBuffer);
-          fileStream.push(null);
-
           const truncStr = (str: string, len: number) => {
             if (!str) return '';
 
@@ -2284,18 +2267,81 @@ export class ChatwootService {
 
           const title = truncStr(adsMessage.title, 40);
           const description = truncStr(adsMessage?.body, 75);
+          const referralAttributes = this.buildReferralAttributes(adsMessage);
+          const adCaption = `${bodyMessage}\n\n\n**${title}**\n${description}\n${adsMessage.sourceUrl}`;
+
+          const sendWithoutThumbnail = async () => {
+            const send = await this.createMessage(
+              instance,
+              getConversation,
+              adCaption,
+              messageType,
+              false,
+              [],
+              body,
+              'WAID:' + body.key.id,
+              quotedMsg,
+              referralAttributes,
+            );
+
+            if (!send) {
+              this.logger.warn('message not sent');
+              return;
+            }
+
+            return send;
+          };
+
+          let imgBuffer;
+          try {
+            imgBuffer = await axios.get(adsMessage.thumbnailUrl, { responseType: 'arraybuffer' });
+          } catch (error) {
+            this.logger.warn(`Failed to download ads thumbnail: ${error?.message || error}`);
+            return sendWithoutThumbnail();
+          }
+
+          const extension = mimeTypes.extension(imgBuffer.headers['content-type']);
+          const mimeType = extension && mimeTypes.lookup(extension);
+
+          if (!mimeType) {
+            this.logger.warn('mimetype of Ads message not found');
+            return sendWithoutThumbnail();
+          }
+
+          const random = Math.random().toString(36).substring(7);
+          const nameFile = `${random}.${mimeTypes.extension(mimeType)}`;
+          const fileData = Buffer.from(imgBuffer.data, 'binary');
+
+          let processedBuffer: Buffer = fileData;
+          try {
+            const img = await Jimp.read(fileData);
+            await img.cover({
+              w: 320,
+              h: 180,
+            });
+            processedBuffer = await img.getBuffer(JimpMime.png);
+          } catch (error) {
+            this.logger.warn(
+              `Failed to process ads thumbnail with Jimp, sending raw image: ${error?.message || error}`,
+            );
+          }
+
+          const fileStream = new Readable();
+          fileStream._read = () => {}; // _read is required but you can noop it
+          fileStream.push(processedBuffer);
+          fileStream.push(null);
 
           const send = await this.sendData(
             getConversation,
             fileStream,
             nameFile,
             messageType,
-            `${bodyMessage}\n\n\n**${title}**\n${description}\n${adsMessage.sourceUrl}`,
+            adCaption,
             instance,
             body,
             'WAID:' + body.key.id,
             quotedMsg,
-            this.buildReferralAttributes(adsMessage),
+            referralAttributes,
           );
 
           if (!send) {
