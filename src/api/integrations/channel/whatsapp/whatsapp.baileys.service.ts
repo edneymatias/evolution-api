@@ -1164,18 +1164,6 @@ export class BaileysStartupService extends ChannelStartupService {
           }
 
           if ((type !== 'notify' && type !== 'append') || editedMessage || !received?.message) {
-            let hasAdReply = false;
-            try {
-              hasAdReply = JSON.stringify(received?.message || {}).includes('externalAdReply');
-            } catch {
-              hasAdReply = false;
-            }
-            if (hasAdReply) {
-              this.logger.warn(
-                `[ADS-DEBUG] Message with externalAdReply DISCARDED by upsert type filter. ` +
-                  `type=${type} editedMessage=${!!editedMessage} hasMessage=${!!received?.message} keyId=${received?.key?.id}`,
-              );
-            }
             continue;
           }
 
@@ -1334,12 +1322,6 @@ export class BaileysStartupService extends ChannelStartupService {
           if (this.localSettings.readStatus && received.key.id === 'status@broadcast') {
             await this.client.readMessages([received.key]);
           }
-
-          this.logger.warn(
-            `[ADS-DEBUG] gate-check v2 keyId=${received.key.id} CHATWOOT.ENABLED=${this.configService.get<Chatwoot>('CHATWOOT').ENABLED} ` +
-              `localChatwoot.enabled=${this.localChatwoot?.enabled} instanceId=${this.instanceId} instanceName=${this.instance.name} ` +
-              `isBroadcast=${received.key.id.includes('@broadcast')}`,
-          );
 
           if (
             this.configService.get<Chatwoot>('CHATWOOT').ENABLED &&

@@ -1747,24 +1747,6 @@ export class ChatwootService {
       msg.message?.extendedTextMessage?.contextInfo?.externalAdReply ||
       msg.message?.contextInfo?.externalAdReply;
 
-    if (!externalAdReply) {
-      let rawDump = '';
-      try {
-        rawDump = JSON.stringify(msg);
-      } catch {
-        rawDump = '';
-      }
-      if (rawDump.includes('externalAdReply')) {
-        this.logger.warn(
-          `[ADS-DEBUG] externalAdReply found in raw payload but not extracted. ` +
-            `topKeys=${Object.keys(msg || {}).join(',')} ` +
-            `messageKeys=${msg?.message ? Object.keys(msg.message).join(',') : 'n/a'} ` +
-            `contextInfoKeys=${msg?.contextInfo ? Object.keys(msg.contextInfo).join(',') : 'n/a'} ` +
-            `messageType=${msg?.messageType}`,
-        );
-      }
-    }
-
     const adsMessage: AdsMessage | undefined = {
       title: externalAdReply?.title,
       body: externalAdReply?.body,
@@ -2272,16 +2254,11 @@ export class ChatwootService {
 
         const isAdsMessage = (adsMessage && adsMessage.title) || adsMessage.body || adsMessage.thumbnailUrl;
         if (isAdsMessage) {
-          this.logger.warn(
-            `[ADS-DEBUG] isAdsMessage branch entered. sourceId=${adsMessage.sourceId} sourceType=${adsMessage.sourceType} ` +
-              `thumbnailUrl=${adsMessage.thumbnailUrl}`,
-          );
-
           let imgBuffer;
           try {
             imgBuffer = await axios.get(adsMessage.thumbnailUrl, { responseType: 'arraybuffer' });
           } catch (error) {
-            this.logger.warn(`[ADS-DEBUG] Failed to download ads thumbnail: ${error?.message || error}`);
+            this.logger.warn(`Failed to download ads thumbnail: ${error?.message || error}`);
             return;
           }
 
@@ -2297,12 +2274,19 @@ export class ChatwootService {
           const nameFile = `${random}.${mimeTypes.extension(mimeType)}`;
           const fileData = Buffer.from(imgBuffer.data, 'binary');
 
-          const img = await Jimp.read(fileData);
-          await img.cover({
-            w: 320,
-            h: 180,
-          });
-          const processedBuffer = await img.getBuffer(JimpMime.png);
+          let processedBuffer: Buffer = fileData;
+          try {
+            const img = await Jimp.read(fileData);
+            await img.cover({
+              w: 320,
+              h: 180,
+            });
+            processedBuffer = await img.getBuffer(JimpMime.png);
+          } catch (error) {
+            this.logger.warn(
+              `Failed to process ads thumbnail with Jimp, sending raw image: ${error?.message || error}`,
+            );
+          }
 
           const fileStream = new Readable();
           fileStream._read = () => {}; // _read is required but you can noop it
