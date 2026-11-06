@@ -1789,6 +1789,35 @@ export class ChatwootService {
     return Object.keys(referral).length > 0 ? referral : undefined;
   }
 
+  /**
+   * Click-to-WhatsApp leads where WhatsApp did not attach the ad card (`externalAdReply`).
+   * The message still carries the ad origin in its contextInfo (`conversionSource: FB_Ads`,
+   * `entryPointConversionSource: ctwa_ad`), but not the ad id. Returns a referral without
+   * `source_id` so Chatwoot still flags the message as ad-originated.
+   */
+  private getCtwaReferralWithoutAdCard(msg: any): Record<string, string> | undefined {
+    if (msg?.key?.fromMe) return undefined;
+
+    const message = msg?.message || {};
+    const contentContextInfo = msg?.messageType ? message[msg.messageType]?.contextInfo : undefined;
+    const contextInfo = msg?.contextInfo || contentContextInfo || message.extendedTextMessage?.contextInfo;
+
+    if (!contextInfo || contextInfo.externalAdReply) return undefined;
+
+    const conversionSource: string | undefined = contextInfo.conversionSource;
+    const entryPointSource: string | undefined = contextInfo.entryPointConversionSource;
+
+    const isCtwa = conversionSource === 'FB_Ads' || entryPointSource === 'ctwa_ad';
+    if (!isCtwa) return undefined;
+
+    const referral: Record<string, string> = { source_type: 'ad' };
+    if (contextInfo.entryPointConversionApp) referral.source_app = contextInfo.entryPointConversionApp;
+    if (conversionSource) referral.conversion_source = conversionSource;
+    if (entryPointSource) referral.entry_point_conversion_source = entryPointSource;
+
+    return referral;
+  }
+
   private getReactionMessage(msg: any) {
     interface ReactionMessage {
       key: {
@@ -2084,6 +2113,7 @@ export class ChatwootService {
         const isMedia = this.isMediaMessage(body.message);
 
         const adsMessage = this.getAdsMessage(body);
+        const ctwaReferral = this.getCtwaReferralWithoutAdCard(body);
 
         const reactionMessage = this.getReactionMessage(body.message);
         const isInteractiveButtonMessage = this.isInteractiveButtonMessage(body.messageType, body.message);
@@ -2178,6 +2208,7 @@ export class ChatwootService {
               body,
               'WAID:' + body.key.id,
               quotedMsg,
+              ctwaReferral,
             );
 
             if (!send) {
@@ -2397,6 +2428,7 @@ export class ChatwootService {
             body,
             'WAID:' + body.key.id,
             quotedMsg,
+            ctwaReferral,
           );
 
           if (!send) {
